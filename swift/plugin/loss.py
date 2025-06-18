@@ -22,6 +22,7 @@ class LossType:
     online_contrastive = 'online_contrastive'
     infonce = 'infonce'
     channel_loss = 'channel_loss'
+    focal_loss = 'focal_loss'
 
 
 LOSS_MAPPING = {}
@@ -84,6 +85,44 @@ def loss_scale_func(outputs, labels, loss_scale=None, num_items_in_batch=None) -
         # compat transformers>=4.46
         loss = loss.sum() / num_items_in_batch
     return loss
+
+
+@register_loss_func(LossType.focal_loss)
+def focal_loss_func(outputs, labels, focal_alpha=0.25, focal_gamma=2.0, num_items_in_batch=None) -> torch.Tensor:
+    """
+    Multi-label focal loss function for sequence classification.
+    
+    Args:
+        outputs: Model outputs containing logits
+        labels: Ground truth labels (multi-hot encoded for multi-label classification)
+        focal_alpha: Weighting factor for rare class (default: 0.25)
+        focal_gamma: Focusing parameter (default: 2.0)
+        num_items_in_batch: Number of items in batch (for compatibility)
+    
+    Returns:
+        Focal loss tensor
+    """
+    if hasattr(outputs, 'logits'):
+        logits = outputs.logits
+    else:
+        logits = outputs
+    
+    # Ensure labels are on the same device as logits
+    labels = labels.to(logits.device).float()
+    
+    # Apply sigmoid to get probabilities
+    probs = torch.sigmoid(logits)
+    
+    # Compute focal loss for multi-label classification
+    # For positive labels (labels = 1)
+    pos_loss = -focal_alpha * torch.pow(1 - probs, focal_gamma) * torch.log(probs.clamp(min=1e-8))
+    # For negative labels (labels = 0)  
+    neg_loss = -(1 - focal_alpha) * torch.pow(probs, focal_gamma) * torch.log((1 - probs).clamp(min=1e-8))
+    
+    # Combine losses
+    focal_loss = labels * pos_loss + (1 - labels) * neg_loss
+    # Return mean loss
+    return focal_loss.mean()
 
 
 def _parse_pair_sentence(outputs):

@@ -222,8 +222,12 @@ def _patch_sequence_classification(model, model_meta):
                 loss_fct = CrossEntropyLoss()
                 loss = loss_fct(pooled_logits.view(-1, self.num_labels), labels.view(-1))
             elif self.config.problem_type == 'multi_label_classification':
-                loss_fct = BCEWithLogitsLoss()
-                loss = loss_fct(pooled_logits, labels)
+                # Check if model has a custom loss function (e.g., focal loss)
+                if hasattr(self, 'loss_function') and callable(self.loss_function):
+                    loss = self.loss_function(logits=pooled_logits, labels=labels)
+                else:
+                    loss_fct = BCEWithLogitsLoss()
+                    loss = loss_fct(pooled_logits, labels)
         if not return_dict:
             output = (pooled_logits, ) + output[1:]
             return ((loss, ) + output) if loss is not None else output
@@ -237,6 +241,46 @@ def _patch_sequence_classification(model, model_meta):
         )
 
     llm_model.forward = MethodType(new_forward, llm_model)
+    
+    # Set up custom loss function support for seq_cls tasks
+    def custom_loss_function(logits, labels, **kwargs):
+        """Custom loss function that can be overridden by trainer"""
+        from swift.plugin.loss import get_loss_func
+        
+        # Try to get loss function from trainer context if available
+        import inspect
+        frame = inspect.currentframe()
+        try:
+            # Look for trainer in the call stack
+            while frame:
+                if 'self' in frame.f_locals and hasattr(frame.f_locals['self'], 'compute_loss_func'):
+                    trainer = frame.f_locals['self']
+                    if hasattr(trainer, 'compute_loss_func') and trainer.compute_loss_func is not None:
+                        # Create mock outputs object for loss function
+                        class MockOutputs:
+                            def __init__(self, logits):
+                                self.logits = logits
+                        
+                        mock_outputs = MockOutputs(logits)
+                        # Get loss function arguments from trainer
+                        loss_kwargs = {}
+                        if hasattr(trainer.args, 'loss_type') and trainer.args.loss_type == 'focal_loss':
+                            if hasattr(trainer.args, 'focal_alpha'):
+                                loss_kwargs['focal_alpha'] = trainer.args.focal_alpha
+                            if hasattr(trainer.args, 'focal_gamma'):
+                                loss_kwargs['focal_gamma'] = trainer.args.focal_gamma
+                        
+                        return trainer.compute_loss_func(mock_outputs, labels, **loss_kwargs)
+                frame = frame.f_back
+        finally:
+            del frame
+        
+        # Fallback to BCE loss if no custom loss function is found
+        from torch.nn import BCEWithLogitsLoss
+        loss_fct = BCEWithLogitsLoss()
+        return loss_fct(logits, labels)
+    
+    llm_model.loss_function = custom_loss_function
 
 
 @contextmanager

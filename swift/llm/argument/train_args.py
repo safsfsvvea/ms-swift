@@ -104,6 +104,8 @@ class TrainArguments(SwanlabArguments, TunerArguments, BaseArguments, Seq2SeqTra
         temperature (float): Temperature for sampling. Default is 0.
         optimizer (Optional[str]): Optimizer type to use, define it in the plugin package. Default is None.
         metric (Optional[str]): Metric to use for evaluation, define it in the plugin package. Default is None.
+        focal_alpha (float): Alpha parameter for focal loss. Default is 0.25.
+        focal_gamma (float): Gamma parameter for focal loss. Default is 2.0.
     """
     add_version: bool = True
     resume_only_model: bool = False
@@ -113,6 +115,10 @@ class TrainArguments(SwanlabArguments, TunerArguments, BaseArguments, Seq2SeqTra
     # plugin
     loss_type: Optional[str] = field(default=None, metadata={'help': f'loss_func choices: {list(LOSS_MAPPING.keys())}'})
     metric: Optional[str] = None
+    
+    # focal loss parameters
+    focal_alpha: float = field(default=0.25, metadata={'help': 'Alpha parameter for focal loss (default: 0.25)'})
+    focal_gamma: float = field(default=2.0, metadata={'help': 'Gamma parameter for focal loss (default: 2.0)'})
 
     # extra
     max_new_tokens: int = 64

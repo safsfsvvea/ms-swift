@@ -174,6 +174,13 @@ class Seq2SeqTrainer(SwiftMixin, DataLoaderMixin, HfSeq2SeqTrainer):
             loss_kwargs['sample_channels'] = sample_channels
             loss_kwargs['trainer'] = self
 
+        # Add focal loss parameters if using focal loss
+        if compute_loss_func is not None and hasattr(self.args, 'loss_type') and self.args.loss_type == 'focal_loss':
+            if hasattr(self.args, 'focal_alpha'):
+                loss_kwargs['focal_alpha'] = self.args.focal_alpha
+            if hasattr(self.args, 'focal_gamma'):
+                loss_kwargs['focal_gamma'] = self.args.focal_gamma
+
         if (self.label_smoother is not None or compute_loss_func is not None) and 'labels' in inputs:
             labels = inputs.pop('labels')
 
